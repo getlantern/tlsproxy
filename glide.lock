@@ -1,0 +1,30 @@
+hash: 2fba0f14eb046d989693da6ca931e1d98966610f34e339c12b226eea90a4c8db
+updated: 2016-06-18T07:01:31.372254303-05:00
+imports:
+- name: github.com/getlantern/byteexec
+  version: 431d6edd2151495029d77e1c510affa5d89fe168
+- name: github.com/getlantern/context
+  version: 624d99b1798d7c5375ea1d3ca4c5b04d58f7c775
+- name: github.com/getlantern/errors
+  version: 2cb9490e9d7173de46312139267791c8115f5e10
+- name: github.com/getlantern/filepersist
+  version: c5f0cd24e7991579ba6f5f1bd20a1ad2c9f06cd4
+- name: github.com/getlantern/golog
+  version: 00277a46b6a621ee8868060f5bd4b0173d452c7b
+- name: github.com/getlantern/hex
+  version: 083fba3033ad473db3dd31c9bb368473d37581a7
+- name: github.com/getlantern/hidden
+  version: d52a649ab33af200943bb599898dbdcfdbc94cb7
+- name: github.com/getlantern/keyman
+  version: 068a9b24f9af425a6f662a8fe5dcc032e4001897
+  subpackages:
+  - certimporter
+- name: github.com/getlantern/netx
+  version: a21d1a9d4fc64844df0f7cd9623ee75d6ab594a1
+- name: github.com/getlantern/ops
+  version: b70875f5d689a9438bca72aefd7142a2af889b18
+- name: github.com/getlantern/stack
+  version: 02f928aad224fbccd50d66edd776fc9d1e9f2f2b
+- name: github.com/oxtoacart/bpool
+  version: 4e1c5567d7c2dd59fa4c7c83d34c2f3528b025d6
+devImports: []

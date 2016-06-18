@@ -1,0 +1,6 @@
+package: github.com/getlantern/tlsproxy
+import:
+- package: github.com/getlantern/golog
+- package: github.com/getlantern/keyman
+- package: github.com/getlantern/netx
+- package: github.com/oxtoacart/bpool
