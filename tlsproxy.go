@@ -92,6 +92,7 @@ func runClient(tlsConfig *tls.Config) {
 		log.Fatalf("Unable to determine hostname for server: %v", err)
 	}
 	tlsConfig.ServerName = host
+	tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(5000)
 
 	doRun(func() (net.Listener, error) {
 		return net.Listen("tcp", *listenAddr)
@@ -113,6 +114,8 @@ func doRun(listen func() (net.Listener, error), dial func() (net.Conn, error)) {
 		if err != nil {
 			log.Fatalf("Unable to accept: %v", err)
 		}
+		log.Tracef("Accepted connection from %v", in.RemoteAddr())
+
 		go func() {
 			defer in.Close()
 			out, err := dial()
@@ -122,6 +125,7 @@ func doRun(listen func() (net.Listener, error), dial func() (net.Conn, error)) {
 			}
 			defer out.Close()
 
+			log.Tracef("Copying to %v", out.RemoteAddr())
 			bufOut := buffers.Get()
 			bufIn := buffers.Get()
 			defer buffers.Put(bufOut)
