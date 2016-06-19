@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"flag"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -24,6 +26,7 @@ var (
 	pkfile      = flag.String("pkfile", "pk.pem", "File containing private key for this proxy")
 	certfile    = flag.String("certfile", "cert.pem", "File containing the certificate for this proxy")
 	cafile      = flag.String("cafile", "cert.pem", "File containing the certificate authority (or just certificate) with which to verify the remote end's identity")
+	pprofAddr   = flag.String("pprofaddr", "localhost:4000", "pprof address to listen on, not activate pprof if empty")
 	help        = flag.Bool("help", false, "Get usage help")
 
 	buffers = bpool.NewBytePool(1000, 32768)
@@ -34,6 +37,15 @@ func main() {
 	if *help {
 		flag.Usage()
 		os.Exit(0)
+	}
+
+	if *pprofAddr != "" {
+		go func() {
+			log.Debugf("Starting pprof page at http://%s/debug/pprof", *pprofAddr)
+			if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
+				log.Error(err)
+			}
+		}()
 	}
 
 	hostname := *hostname
@@ -114,7 +126,6 @@ func doRun(listen func() (net.Listener, error), dial func() (net.Conn, error)) {
 		if err != nil {
 			log.Fatalf("Unable to accept: %v", err)
 		}
-		log.Tracef("Accepted connection from %v", in.RemoteAddr())
 
 		go func() {
 			defer in.Close()
@@ -125,7 +136,7 @@ func doRun(listen func() (net.Listener, error), dial func() (net.Conn, error)) {
 			}
 			defer out.Close()
 
-			log.Tracef("Copying to %v", out.RemoteAddr())
+			log.Debugf("Copying from %v to %v", in.RemoteAddr(), out.RemoteAddr())
 			bufOut := buffers.Get()
 			bufIn := buffers.Get()
 			defer buffers.Put(bufOut)
