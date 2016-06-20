@@ -29,7 +29,7 @@ var (
 	pprofAddr   = flag.String("pprofaddr", "localhost:4000", "pprof address to listen on, not activate pprof if empty")
 	help        = flag.Bool("help", false, "Get usage help")
 
-	buffers = bpool.NewBytePool(1000, 32768)
+	buffers = bpool.NewBytePool(25000, 32768)
 )
 
 func main() {
