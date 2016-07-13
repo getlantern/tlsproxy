@@ -109,7 +109,13 @@ func runClient(tlsConfig *tls.Config) {
 	doRun(func() (net.Listener, error) {
 		return net.Listen("tcp", *listenAddr)
 	}, func() (net.Conn, error) {
-		return tls.Dial("tcp", *forwardAddr, tlsConfig)
+		conn, err := tls.Dial("tcp", *forwardAddr, tlsConfig)
+		if err == nil {
+			if !conn.ConnectionState().DidResume {
+				log.Debug("Connection did not resume")
+			}
+		}
+		return conn, err
 	})
 }
 
