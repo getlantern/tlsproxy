@@ -147,7 +147,7 @@ func doRun(listen func() (net.Listener, error), dial func() (net.Conn, error)) {
 			bufIn := buffers.Get()
 			defer buffers.Put(bufOut)
 			defer buffers.Put(bufIn)
-			netx.BidiCopy(out, in, bufOut, bufIn, 30*time.Second)
+			netx.BidiCopy(out, in, bufOut, bufIn)
 		}()
 	}
 }

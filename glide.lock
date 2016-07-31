@@ -1,5 +1,5 @@
 hash: 2fba0f14eb046d989693da6ca931e1d98966610f34e339c12b226eea90a4c8db
-updated: 2016-06-18T23:32:55.174604756-05:00
+updated: 2016-07-31T02:34:49.93141699-05:00
 imports:
 - name: github.com/getlantern/byteexec
   version: 431d6edd2151495029d77e1c510affa5d89fe168
@@ -20,7 +20,7 @@ imports:
   subpackages:
   - certimporter
 - name: github.com/getlantern/netx
-  version: 427296094076c85817e2bdddcc9694b685d58737
+  version: dd9af75d5bfdc86fa35f3aeadb42945db1c1e56a
 - name: github.com/getlantern/ops
   version: b70875f5d689a9438bca72aefd7142a2af889b18
 - name: github.com/getlantern/stack
