@@ -20,7 +20,7 @@ imports:
   subpackages:
   - certimporter
 - name: github.com/getlantern/netx
-  version: dd9af75d5bfdc86fa35f3aeadb42945db1c1e56a
+  version: 70375a276c57e76c1fe1e2fbdb4c2d2714a67b39
 - name: github.com/getlantern/ops
   version: b70875f5d689a9438bca72aefd7142a2af889b18
 - name: github.com/getlantern/stack
