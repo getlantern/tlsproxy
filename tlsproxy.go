@@ -11,9 +11,14 @@ import (
 	"time"
 
 	"github.com/getlantern/golog"
+	"github.com/getlantern/idletiming"
 	"github.com/getlantern/keyman"
 	"github.com/getlantern/netx"
 	"github.com/oxtoacart/bpool"
+)
+
+const (
+	defaultIdleTimeout = 2 * time.Hour
 )
 
 var (
@@ -23,6 +28,7 @@ var (
 	hostname    = flag.String("hostname", "", "Hostname to use for TLS. If not supplied, will auto-detect hostname")
 	listenAddr  = flag.String("listen-addr", ":6380", "Address at which to listen for incoming connections")
 	forwardAddr = flag.String("forward-addr", "localhost:6379", "Address to which to forward connections")
+	idleTimeout = flag.Duration("idletimeout", defaultIdleTimeout, "How long to wait before closing idle connections")
 	pkfile      = flag.String("pkfile", "pk.pem", "File containing private key for this proxy")
 	certfile    = flag.String("certfile", "cert.pem", "File containing the certificate for this proxy")
 	cafile      = flag.String("cafile", "cert.pem", "File containing the certificate authority (or just certificate) with which to verify the remote end's identity")
@@ -57,6 +63,11 @@ func main() {
 	}
 	if hostname == "" {
 		hostname = "localhost"
+	}
+
+	if *idleTimeout < 0 {
+		log.Debugf("Defaulting idletimeout to %v", defaultIdleTimeout)
+		*idleTimeout = defaultIdleTimeout
 	}
 
 	log.Debugf("Mode: %v", *mode)
@@ -128,18 +139,20 @@ func doRun(listen func() (net.Listener, error), dial func() (net.Conn, error)) {
 	log.Debugf("Listening for incoming connections at: %v", l.Addr())
 
 	for {
-		in, err := l.Accept()
+		_in, err := l.Accept()
 		if err != nil {
 			log.Fatalf("Unable to accept: %v", err)
 		}
 
+		in := idletiming.Conn(_in, *idleTimeout, nil)
 		go func() {
 			defer in.Close()
-			out, err := dial()
+			_out, err := dial()
 			if err != nil {
 				log.Debugf("Unable to dial forwarding address: %v", err)
 				return
 			}
+			out := idletiming.Conn(_out, *idleTimeout, nil)
 			defer out.Close()
 
 			log.Debugf("Copying from %v to %v", in.RemoteAddr(), out.RemoteAddr())
