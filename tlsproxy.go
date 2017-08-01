@@ -17,10 +17,6 @@ import (
 	"github.com/oxtoacart/bpool"
 )
 
-const (
-	defaultIdleTimeout = 2 * time.Hour
-)
-
 var (
 	log = golog.LoggerFor("tlsproxy")
 
@@ -28,7 +24,7 @@ var (
 	hostname    = flag.String("hostname", "", "Hostname to use for TLS. If not supplied, will auto-detect hostname")
 	listenAddr  = flag.String("listen-addr", ":6380", "Address at which to listen for incoming connections")
 	forwardAddr = flag.String("forward-addr", "localhost:6379", "Address to which to forward connections")
-	idleTimeout = flag.Duration("idletimeout", defaultIdleTimeout, "How long to wait before closing idle connections")
+	idleTimeout = flag.Duration("idletimeout", 2*time.Hour, "How long to wait before closing idle connections")
 	pkfile      = flag.String("pkfile", "pk.pem", "File containing private key for this proxy")
 	certfile    = flag.String("certfile", "cert.pem", "File containing the certificate for this proxy")
 	cafile      = flag.String("cafile", "cert.pem", "File containing the certificate authority (or just certificate) with which to verify the remote end's identity")
@@ -65,14 +61,10 @@ func main() {
 		hostname = "localhost"
 	}
 
-	if *idleTimeout < 0 {
-		log.Debugf("Defaulting idletimeout to %v", defaultIdleTimeout)
-		*idleTimeout = defaultIdleTimeout
-	}
-
 	log.Debugf("Mode: %v", *mode)
 	log.Debugf("Hostname: %v", hostname)
 	log.Debugf("Forwarding to: %v", *forwardAddr)
+	log.Debugf("Idletimeout: %v", *idleTimeout)
 
 	cert, err := keyman.KeyPairFor(hostname, *pkfile, *certfile)
 	if err != nil {
@@ -91,36 +83,37 @@ func main() {
 		ClientCAs:    pool,
 	}
 
+	l, err := net.Listen("tcp", *listenAddr)
+	if err != nil {
+		log.Fatalf("Unable to listen at %v: %v", *listenAddr, err)
+	}
+
 	switch *mode {
 	case "server":
-		runServer(tlsConfig)
+		runServer(l, *forwardAddr, *idleTimeout, tlsConfig)
 	case "client":
-		runClient(tlsConfig)
+		runClient(l, *forwardAddr, *idleTimeout, tlsConfig)
 	default:
 		log.Fatalf("Unknown mode: %v", *mode)
 	}
 }
 
-func runServer(tlsConfig *tls.Config) {
-	doRun(func() (net.Listener, error) {
-		return tls.Listen("tcp", *listenAddr, tlsConfig)
-	}, func() (net.Conn, error) {
-		return net.DialTimeout("tcp", *forwardAddr, 30*time.Second)
+func runServer(l net.Listener, forwardAddr string, idleTimeout time.Duration, tlsConfig *tls.Config) {
+	doRun(idleTimeout, tls.NewListener(l, tlsConfig), func() (net.Conn, error) {
+		return net.DialTimeout("tcp", forwardAddr, 30*time.Second)
 	})
 }
 
-func runClient(tlsConfig *tls.Config) {
-	host, _, err := net.SplitHostPort(*forwardAddr)
+func runClient(l net.Listener, forwardAddr string, idleTimeout time.Duration, tlsConfig *tls.Config) {
+	host, _, err := net.SplitHostPort(forwardAddr)
 	if err != nil {
 		log.Fatalf("Unable to determine hostname for server: %v", err)
 	}
 	tlsConfig.ServerName = host
 	tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(5000)
 
-	doRun(func() (net.Listener, error) {
-		return net.Listen("tcp", *listenAddr)
-	}, func() (net.Conn, error) {
-		conn, err := tls.Dial("tcp", *forwardAddr, tlsConfig)
+	doRun(idleTimeout, l, func() (net.Conn, error) {
+		conn, err := tls.Dial("tcp", forwardAddr, tlsConfig)
 		if err == nil {
 			if !conn.ConnectionState().DidResume {
 				log.Debug("Connection did not resume")
@@ -130,29 +123,30 @@ func runClient(tlsConfig *tls.Config) {
 	})
 }
 
-func doRun(listen func() (net.Listener, error), dial func() (net.Conn, error)) {
-	l, err := listen()
-	if err != nil {
-		log.Fatalf("Unable to listen: %v", err)
+func doRun(idleTimeout time.Duration, l net.Listener, dial func() (net.Conn, error)) {
+	if idleTimeout > 0 {
+		l = idletiming.Listener(l, idleTimeout, func(net.Conn) {})
 	}
 	defer l.Close()
 	log.Debugf("Listening for incoming connections at: %v", l.Addr())
 
 	for {
-		_in, err := l.Accept()
+		in, err := l.Accept()
 		if err != nil {
-			log.Fatalf("Unable to accept: %v", err)
+			log.Errorf("Unable to accept: %v", err)
+			return
 		}
 
-		in := idletiming.Conn(_in, *idleTimeout, nil)
 		go func() {
 			defer in.Close()
-			_out, err := dial()
+			out, err := dial()
 			if err != nil {
 				log.Debugf("Unable to dial forwarding address: %v", err)
 				return
 			}
-			out := idletiming.Conn(_out, *idleTimeout, nil)
+			if idleTimeout > 0 {
+				out = idletiming.Conn(out, idleTimeout, func() {})
+			}
 			defer out.Close()
 
 			log.Debugf("Copying from %v to %v", in.RemoteAddr(), out.RemoteAddr())
