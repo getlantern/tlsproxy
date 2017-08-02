@@ -8,32 +8,29 @@ import (
 	"time"
 
 	"github.com/getlantern/keyman"
+	"github.com/stretchr/testify/assert"
+)
+
+const (
+	iters = 100
 )
 
 var (
 	data = []byte("Hello there strange and wonderful benchmarking world!")
 )
 
-func BenchmarkNoIdle(b *testing.B) {
-	doBenchmark(b, 0)
-}
-
-func BenchmarkIdle(b *testing.B) {
-	doBenchmark(b, 2*time.Hour)
-}
-
-func doBenchmark(b *testing.B, idleTimeout time.Duration) {
+func TestProxy(t *testing.T) {
 	pk, err := keyman.GeneratePK(2048)
 	if err != nil {
-		b.Fatal(err)
+		t.Fatal(err)
 	}
 	cert, err := pk.TLSCertificateFor("lantern", "lantern", time.Now().Add(24*time.Hour), false, nil)
 	if err != nil {
-		b.Fatal(err)
+		t.Fatal(err)
 	}
 	keyPair, err := tls.X509KeyPair(cert.PEMEncoded(), pk.PEMEncoded())
 	if err != nil {
-		b.Fatal(err)
+		t.Fatal(err)
 	}
 	serverConfig := &tls.Config{
 		Certificates: []tls.Certificate{keyPair},
@@ -44,7 +41,7 @@ func doBenchmark(b *testing.B, idleTimeout time.Duration) {
 
 	l, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		b.Fatal(err)
+		t.Fatal(err)
 	}
 	defer l.Close()
 	go func() {
@@ -63,39 +60,43 @@ func doBenchmark(b *testing.B, idleTimeout time.Duration) {
 
 	sl, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		b.Fatal(err)
+		t.Fatal(err)
 	}
 	defer sl.Close()
 
 	cl, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		b.Fatal(err)
+		t.Fatal(err)
 	}
 	defer cl.Close()
 
-	go runServer(sl, l.Addr().String(), idleTimeout, serverConfig)
-	go runClient(cl, sl.Addr().String(), idleTimeout, clientConfig)
+	go runServer(sl, l.Addr().String(), 150*time.Millisecond, serverConfig)
+	go runClient(cl, sl.Addr().String(), 150*time.Millisecond, clientConfig)
 
 	clientAddr := cl.Addr().String()
 
-	b.ResetTimer()
+	conn, err := net.Dial("tcp", clientAddr)
+	if err != nil {
+		t.Fatalf("Unable to dial client proxy: %v", err)
+	}
+	defer conn.Close()
 
-	buf := make([]byte, len(data))
-	for i := 0; i < b.N; i++ {
-		conn, err := net.Dial("tcp", clientAddr)
-		if err != nil {
-			b.Fatalf("Unable to dial client proxy: %v", err)
-		}
-		for j := 0; j < 100; j++ {
+	// Write
+	go func() {
+		for j := 0; j < iters; j++ {
 			_, err := conn.Write(data)
 			if err != nil {
-				b.Fatalf("%d Unable to write: %v", j, err)
-			}
-			_, err = io.ReadFull(conn, buf)
-			if err != nil {
-				b.Fatalf("%d Unable to read: %v", j, err)
+				t.Fatalf("%d Unable to write: %v", j, err)
 			}
 		}
-		conn.Close()
+	}()
+
+	// Read (should stop automatically due to TCP keepalive)
+	buf := make([]byte, len(data))
+	for i := 0; i < iters; i++ {
+		_, err := io.ReadFull(conn, buf)
+		if !assert.NoError(t, err) {
+			return
+		}
 	}
 }

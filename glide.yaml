@@ -4,3 +4,4 @@ import:
 - package: github.com/getlantern/keyman
 - package: github.com/getlantern/netx
 - package: github.com/oxtoacart/bpool
+- package: github.com/felixge/tcpkeepalive
