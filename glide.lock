@@ -1,8 +1,6 @@
 hash: 59777c8684d69a7e00d092fae64f533b6f6cf60261104247aa4be615617a666a
 updated: 2017-08-02T14:51:47.817011415-05:00
 imports:
-- name: github.com/felixge/tcpkeepalive
-  version: 5bb0b2dea91e0de550022159b9571aafc72c08ba
 - name: github.com/getlantern/byteexec
   version: 431d6edd2151495029d77e1c510affa5d89fe168
 - name: github.com/getlantern/context
