@@ -161,25 +161,27 @@ func doRun(l net.Listener, dial func() (net.Conn, error)) {
 
 func dial(keepAlivePeriod time.Duration, forwardAddr string) (net.Conn, error) {
 	conn, err := net.DialTimeout("tcp", forwardAddr, 30*time.Second)
-	if err == nil {
+	if err == nil && keepAlivePeriod > 0 {
 		addKeepalive(keepAlivePeriod, conn)
 	}
 	return conn, err
 }
 
-func addKeepalive(keepAlivePeriod time.Duration, conn net.Conn) net.Conn {
-	if keepAlivePeriod <= 0 {
-		return conn
-	}
-
+func addKeepalive(keepAlivePeriod time.Duration, conn net.Conn) {
 	c, ok := conn.(*net.TCPConn)
 	if !ok {
 		log.Error("Conn was not a TCPConn, can't set KeepAlivePeriod!")
-		return conn
+		return
 	}
-	c.SetKeepAlivePeriod(keepAlivePeriod)
-
-	return c
+	err := c.SetKeepAlive(true)
+	if err != nil {
+		log.Errorf("Unable to turn on TCP keep alives: %v", err)
+		return
+	}
+	err = c.SetKeepAlivePeriod(keepAlivePeriod)
+	if err != nil {
+		log.Errorf("Unable to set KeepAlivePeriod: %v", err)
+	}
 }
 
 func wrapKeepAliveListener(keepAlivePeriod time.Duration, l net.Listener) net.Listener {
