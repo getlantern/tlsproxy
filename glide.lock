@@ -1,5 +1,5 @@
-hash: 2fba0f14eb046d989693da6ca931e1d98966610f34e339c12b226eea90a4c8db
-updated: 2016-07-31T02:34:49.93141699-05:00
+hash: 59777c8684d69a7e00d092fae64f533b6f6cf60261104247aa4be615617a666a
+updated: 2017-08-02T14:51:47.817011415-05:00
 imports:
 - name: github.com/getlantern/byteexec
   version: 431d6edd2151495029d77e1c510affa5d89fe168
@@ -27,4 +27,16 @@ imports:
   version: 02f928aad224fbccd50d66edd776fc9d1e9f2f2b
 - name: github.com/oxtoacart/bpool
   version: 4e1c5567d7c2dd59fa4c7c83d34c2f3528b025d6
-devImports: []
+testImports:
+- name: github.com/davecgh/go-spew
+  version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
+  subpackages:
+  - spew
+- name: github.com/pmezard/go-difflib
+  version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
+  subpackages:
+  - difflib
+- name: github.com/stretchr/testify
+  version: f6abca593680b2315d2075e0f5e2a9751e3f431a
+  subpackages:
+  - assert

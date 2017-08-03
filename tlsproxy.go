@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/getlantern/golog"
-	"github.com/getlantern/idletiming"
 	"github.com/getlantern/keyman"
 	"github.com/getlantern/netx"
 	"github.com/oxtoacart/bpool"
@@ -20,16 +19,16 @@ import (
 var (
 	log = golog.LoggerFor("tlsproxy")
 
-	mode        = flag.String("mode", "server", "Mode.  server = listen for TLS connections, client = listen for plain text connections")
-	hostname    = flag.String("hostname", "", "Hostname to use for TLS. If not supplied, will auto-detect hostname")
-	listenAddr  = flag.String("listen-addr", ":6380", "Address at which to listen for incoming connections")
-	forwardAddr = flag.String("forward-addr", "localhost:6379", "Address to which to forward connections")
-	idleTimeout = flag.Duration("idletimeout", 2*time.Hour, "How long to wait before closing idle connections")
-	pkfile      = flag.String("pkfile", "pk.pem", "File containing private key for this proxy")
-	certfile    = flag.String("certfile", "cert.pem", "File containing the certificate for this proxy")
-	cafile      = flag.String("cafile", "cert.pem", "File containing the certificate authority (or just certificate) with which to verify the remote end's identity")
-	pprofAddr   = flag.String("pprofaddr", "localhost:4000", "pprof address to listen on, not activate pprof if empty")
-	help        = flag.Bool("help", false, "Get usage help")
+	mode            = flag.String("mode", "server", "Mode.  server = listen for TLS connections, client = listen for plain text connections")
+	hostname        = flag.String("hostname", "", "Hostname to use for TLS. If not supplied, will auto-detect hostname")
+	listenAddr      = flag.String("listen-addr", ":6380", "Address at which to listen for incoming connections")
+	forwardAddr     = flag.String("forward-addr", "localhost:6379", "Address to which to forward connections")
+	keepAlivePeriod = flag.Duration("keepaliveperiod", 2*time.Hour, "Period for sending tcp keepalives")
+	pkfile          = flag.String("pkfile", "pk.pem", "File containing private key for this proxy")
+	certfile        = flag.String("certfile", "cert.pem", "File containing the certificate for this proxy")
+	cafile          = flag.String("cafile", "cert.pem", "File containing the certificate authority (or just certificate) with which to verify the remote end's identity")
+	pprofAddr       = flag.String("pprofaddr", "localhost:4000", "pprof address to listen on, not activate pprof if empty")
+	help            = flag.Bool("help", false, "Get usage help")
 
 	buffers = bpool.NewBytePool(25000, 32768)
 )
@@ -64,7 +63,7 @@ func main() {
 	log.Debugf("Mode: %v", *mode)
 	log.Debugf("Hostname: %v", hostname)
 	log.Debugf("Forwarding to: %v", *forwardAddr)
-	log.Debugf("Idletimeout: %v", *idleTimeout)
+	log.Debugf("TCP KeepAlive Period: %v", *keepAlivePeriod)
 
 	cert, err := keyman.KeyPairFor(hostname, *pkfile, *certfile)
 	if err != nil {
@@ -90,21 +89,21 @@ func main() {
 
 	switch *mode {
 	case "server":
-		runServer(l, *forwardAddr, *idleTimeout, tlsConfig)
+		runServer(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
 	case "client":
-		runClient(l, *forwardAddr, *idleTimeout, tlsConfig)
+		runClient(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
 	default:
 		log.Fatalf("Unknown mode: %v", *mode)
 	}
 }
 
-func runServer(l net.Listener, forwardAddr string, idleTimeout time.Duration, tlsConfig *tls.Config) {
-	doRun(idleTimeout, tls.NewListener(l, tlsConfig), func() (net.Conn, error) {
-		return net.DialTimeout("tcp", forwardAddr, 30*time.Second)
+func runServer(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
+	doRun(tls.NewListener(wrapKeepAliveListener(keepAlivePeriod, l), tlsConfig), func() (net.Conn, error) {
+		return dial(keepAlivePeriod, forwardAddr)
 	})
 }
 
-func runClient(l net.Listener, forwardAddr string, idleTimeout time.Duration, tlsConfig *tls.Config) {
+func runClient(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
 	host, _, err := net.SplitHostPort(forwardAddr)
 	if err != nil {
 		log.Fatalf("Unable to determine hostname for server: %v", err)
@@ -112,21 +111,25 @@ func runClient(l net.Listener, forwardAddr string, idleTimeout time.Duration, tl
 	tlsConfig.ServerName = host
 	tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(5000)
 
-	doRun(idleTimeout, l, func() (net.Conn, error) {
-		conn, err := tls.Dial("tcp", forwardAddr, tlsConfig)
-		if err == nil {
-			if !conn.ConnectionState().DidResume {
-				log.Debug("Connection did not resume")
-			}
+	doRun(wrapKeepAliveListener(keepAlivePeriod, l), func() (net.Conn, error) {
+		_conn, err := dial(keepAlivePeriod, forwardAddr)
+		if err != nil {
+			return _conn, err
 		}
-		return conn, err
+		conn := tls.Client(_conn, tlsConfig)
+		err = conn.Handshake()
+		if err != nil {
+			_conn.Close()
+			return nil, err
+		}
+		if !conn.ConnectionState().DidResume {
+			log.Debug("Connection did not resume")
+		}
+		return conn, nil
 	})
 }
 
-func doRun(idleTimeout time.Duration, l net.Listener, dial func() (net.Conn, error)) {
-	if idleTimeout > 0 {
-		l = idletiming.Listener(l, idleTimeout, func(net.Conn) {})
-	}
+func doRun(l net.Listener, dial func() (net.Conn, error)) {
 	defer l.Close()
 	log.Debugf("Listening for incoming connections at: %v", l.Addr())
 
@@ -144,9 +147,6 @@ func doRun(idleTimeout time.Duration, l net.Listener, dial func() (net.Conn, err
 				log.Debugf("Unable to dial forwarding address: %v", err)
 				return
 			}
-			if idleTimeout > 0 {
-				out = idletiming.Conn(out, idleTimeout, func() {})
-			}
 			defer out.Close()
 
 			log.Debugf("Copying from %v to %v", in.RemoteAddr(), out.RemoteAddr())
@@ -157,4 +157,58 @@ func doRun(idleTimeout time.Duration, l net.Listener, dial func() (net.Conn, err
 			netx.BidiCopy(out, in, bufOut, bufIn)
 		}()
 	}
+}
+
+func dial(keepAlivePeriod time.Duration, forwardAddr string) (net.Conn, error) {
+	conn, err := net.DialTimeout("tcp", forwardAddr, 30*time.Second)
+	if err == nil && keepAlivePeriod > 0 {
+		addKeepalive(keepAlivePeriod, conn)
+	}
+	return conn, err
+}
+
+func addKeepalive(keepAlivePeriod time.Duration, conn net.Conn) {
+	c, ok := conn.(*net.TCPConn)
+	if !ok {
+		log.Error("Conn was not a TCPConn, can't set KeepAlivePeriod!")
+		return
+	}
+	err := c.SetKeepAlive(true)
+	if err != nil {
+		log.Errorf("Unable to turn on TCP keep alives: %v", err)
+		return
+	}
+	err = c.SetKeepAlivePeriod(keepAlivePeriod)
+	if err != nil {
+		log.Errorf("Unable to set KeepAlivePeriod: %v", err)
+	}
+}
+
+func wrapKeepAliveListener(keepAlivePeriod time.Duration, l net.Listener) net.Listener {
+	if keepAlivePeriod <= 0 {
+		return l
+	}
+
+	return &keepAliveListener{l: l, keepAlivePeriod: keepAlivePeriod}
+}
+
+type keepAliveListener struct {
+	l               net.Listener
+	keepAlivePeriod time.Duration
+}
+
+func (l *keepAliveListener) Accept() (net.Conn, error) {
+	conn, err := l.l.Accept()
+	if err == nil {
+		addKeepalive(l.keepAlivePeriod, conn)
+	}
+	return conn, err
+}
+
+func (l *keepAliveListener) Close() error {
+	return l.l.Close()
+}
+
+func (l *keepAliveListener) Addr() net.Addr {
+	return l.l.Addr()
 }
