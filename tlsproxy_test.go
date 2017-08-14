@@ -2,8 +2,11 @@ package main
 
 import (
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
+	"os/exec"
+	"strconv"
 	"testing"
 	"time"
 
@@ -13,10 +16,6 @@ import (
 
 const (
 	iters = 100
-)
-
-var (
-	data = []byte("Hello there strange and wonderful benchmarking world!")
 )
 
 func TestProxy(t *testing.T) {
@@ -73,30 +72,18 @@ func TestProxy(t *testing.T) {
 	go runServer(sl, l.Addr().String(), 150*time.Millisecond, serverConfig)
 	go runClient(cl, sl.Addr().String(), 150*time.Millisecond, clientConfig)
 
-	clientAddr := cl.Addr().String()
-
-	conn, err := net.Dial("tcp", clientAddr)
-	if err != nil {
-		t.Fatalf("Unable to dial client proxy: %v", err)
-	}
-	defer conn.Close()
-
-	// Write
+	// execute client code in a separate process to make sure we handle unclean
+	// disconnect well (using keepalives)
+	testClient := exec.Command("go", "run", "testclient/testclient.go", cl.Addr().String(), strconv.Itoa(iters))
 	go func() {
-		for j := 0; j < iters; j++ {
-			_, err := conn.Write(data)
-			if err != nil {
-				t.Fatalf("%d Unable to write: %v", j, err)
-			}
-		}
+		// forcibly kill test client after waiting a little bit
+		time.Sleep(2 * time.Second)
+		testClient.Process.Kill()
 	}()
 
-	// Read (should stop automatically due to TCP keepalive)
-	buf := make([]byte, len(data))
-	for i := 0; i < iters; i++ {
-		_, err := io.ReadFull(conn, buf)
-		if !assert.NoError(t, err) {
-			return
-		}
+	out, err := testClient.CombinedOutput()
+	if !assert.NoError(t, err) {
+		return
 	}
+	fmt.Println(out)
 }
