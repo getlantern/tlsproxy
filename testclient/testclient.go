@@ -44,6 +44,5 @@ func main() {
 		}
 	}
 
-	// Don't terminate ourselves, let test kill us
 	time.Sleep(5 * time.Hour)
 }

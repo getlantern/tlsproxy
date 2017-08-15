@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/felixge/tcpkeepalive"
 	"github.com/getlantern/golog"
 	"github.com/getlantern/keyman"
 	"github.com/getlantern/netx"
@@ -155,6 +156,7 @@ func doRun(l net.Listener, dial func() (net.Conn, error)) {
 			defer buffers.Put(bufOut)
 			defer buffers.Put(bufIn)
 			netx.BidiCopy(out, in, bufOut, bufIn)
+			log.Debugf("Done copying from %v to %v", in.RemoteAddr(), out.RemoteAddr())
 		}()
 	}
 }
@@ -168,20 +170,12 @@ func dial(keepAlivePeriod time.Duration, forwardAddr string) (net.Conn, error) {
 }
 
 func addKeepalive(keepAlivePeriod time.Duration, conn net.Conn) {
-	c, ok := conn.(*net.TCPConn)
-	if !ok {
-		log.Error("Conn was not a TCPConn, can't set KeepAlivePeriod!")
+	err := tcpkeepalive.SetKeepAlive(conn, keepAlivePeriod, 5, keepAlivePeriod/100)
+	if err != nil {
+		log.Errorf("Unable to enable TCP KeepAlives: %v", err)
 		return
 	}
-	err := c.SetKeepAlive(true)
-	if err != nil {
-		log.Errorf("Unable to turn on TCP keep alives: %v", err)
-		return
-	}
-	err = c.SetKeepAlivePeriod(keepAlivePeriod)
-	if err != nil {
-		log.Errorf("Unable to set KeepAlivePeriod: %v", err)
-	}
+	log.Debugf("Enabled TCP KeepAlives for %v -> %v", conn.RemoteAddr(), conn.LocalAddr())
 }
 
 func wrapKeepAliveListener(keepAlivePeriod time.Duration, l net.Listener) net.Listener {
@@ -201,6 +195,7 @@ func (l *keepAliveListener) Accept() (net.Conn, error) {
 	conn, err := l.l.Accept()
 	if err == nil {
 		addKeepalive(l.keepAlivePeriod, conn)
+		log.Debugf("Accepted %v -> %v", conn.RemoteAddr(), conn.LocalAddr())
 	}
 	return conn, err
 }
