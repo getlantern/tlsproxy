@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"crypto/tls"
@@ -24,7 +24,7 @@ func TestProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert, err := pk.TLSCertificateFor("lantern", "lantern", time.Now().Add(24*time.Hour), false, nil)
+	cert, err := pk.TLSCertificateFor(time.Now().Add(24*time.Hour), false, nil, "lantern", "lantern")
 	if err != nil {
 		t.Fatal(err)
 	}
