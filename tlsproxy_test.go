@@ -1,4 +1,4 @@
-package main
+package tlsproxy
 
 import (
 	"crypto/tls"
@@ -24,7 +24,7 @@ func TestProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert, err := pk.TLSCertificateFor("lantern", "lantern", time.Now().Add(24*time.Hour), false, nil)
+	cert, err := pk.TLSCertificateFor(time.Now().Add(24*time.Hour), false, nil, "lantern", "lantern")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +70,8 @@ func TestProxy(t *testing.T) {
 	}
 	defer cl.Close()
 
-	go runServer(sl, l.Addr().String(), 150*time.Millisecond, serverConfig)
-	go runClient(cl, sl.Addr().String(), 150*time.Millisecond, clientConfig)
+	go RunServer(sl, l.Addr().String(), 150*time.Millisecond, serverConfig)
+	go RunClient(cl, sl.Addr().String(), 150*time.Millisecond, clientConfig)
 
 	clientAddr := cl.Addr().String()
 
