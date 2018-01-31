@@ -1,5 +1,5 @@
 // tlsproxy provides a TLS proxy kind of like stunnel
-package proxy
+package tlsproxy
 
 import (
 	"crypto/tls"
