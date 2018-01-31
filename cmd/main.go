@@ -13,7 +13,7 @@ import (
 	"github.com/getlantern/keyman"
 	"github.com/oxtoacart/bpool"
 
-	"github.com/getlantern/tlsproxy/proxy"
+	"github.com/getlantern/tlsproxy"
 )
 
 var (

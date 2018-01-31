@@ -9,7 +9,7 @@ import (
 
 	"github.com/getlantern/http-proxy/buffers"
 	"github.com/getlantern/netx"
-	"github.com/getlantern/golog"
+	"github.com/siddontang/go/log"
 )
 
 func RunServer(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
