@@ -89,9 +89,9 @@ func main() {
 
 	switch *mode {
 	case "server":
-		proxy.RunServer(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
+		tlsproxy.RunServer(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
 	case "client":
-		proxy.RunClient(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
+		tlsproxy.RunClient(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
 	default:
 		log.Fatalf("Unknown mode: %v", *mode)
 	}

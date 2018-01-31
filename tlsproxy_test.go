@@ -1,4 +1,4 @@
-package proxy
+package tlsproxy
 
 import (
 	"crypto/tls"
@@ -70,8 +70,8 @@ func TestProxy(t *testing.T) {
 	}
 	defer cl.Close()
 
-	go runServer(sl, l.Addr().String(), 150*time.Millisecond, serverConfig)
-	go runClient(cl, sl.Addr().String(), 150*time.Millisecond, clientConfig)
+	go RunServer(sl, l.Addr().String(), 150*time.Millisecond, serverConfig)
+	go RunClient(cl, sl.Addr().String(), 150*time.Millisecond, clientConfig)
 
 	clientAddr := cl.Addr().String()
 
