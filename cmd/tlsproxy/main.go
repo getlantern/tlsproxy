@@ -67,14 +67,6 @@ func main() {
 
 	tlsConfig := &tls.Config{}
 
-	if *pkfile != "" && *certfile != "" {
-		cert, err := keyman.KeyPairFor(hostname, "getlantern.org", *pkfile, *certfile)
-		if err != nil {
-			log.Fatalf("Unable to load keypair: %v", err)
-		}
-		tlsConfig.Certificates = []tls.Certificate{cert}
-	}
-
 	ca, err := keyman.LoadCertificateFromFile(*cafile)
 	if err != nil {
 		log.Fatalf("Unable to load ca certificate: %v", err)
@@ -89,6 +81,11 @@ func main() {
 
 	switch *mode {
 	case "server":
+		cert, err := keyman.KeyPairFor(hostname, "getlantern.org", *pkfile, *certfile)
+		if err != nil {
+			log.Fatalf("Unable to load keypair: %v", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 		tlsConfig.ClientCAs = pool
 		tlsproxy.RunServer(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
