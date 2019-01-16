@@ -1,4 +1,4 @@
-// tlsproxy provides a TLS proxy kind of like stunnel
+// Package tlsproxy provides a TLS proxy kind of like stunnel
 package tlsproxy
 
 import (
@@ -7,14 +7,16 @@ import (
 	_ "net/http/pprof"
 	"time"
 
+	"github.com/getlantern/golog"
 	"github.com/getlantern/http-proxy/buffers"
 	"github.com/getlantern/netx"
-	"github.com/siddontang/go/log"
 )
+
+var log = golog.LoggerFor("tlsproxy")
 
 func RunServer(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
 	doRun(tls.NewListener(wrapKeepAliveListener(keepAlivePeriod, l), tlsConfig), func() (net.Conn, error) {
-		return dial(keepAlivePeriod, forwardAddr)
+		return dialer(keepAlivePeriod).Dial("tcp", forwardAddr)
 	})
 }
 
@@ -27,20 +29,7 @@ func RunClient(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration
 	tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(5000)
 
 	doRun(wrapKeepAliveListener(keepAlivePeriod, l), func() (net.Conn, error) {
-		_conn, err := dial(keepAlivePeriod, forwardAddr)
-		if err != nil {
-			return _conn, err
-		}
-		conn := tls.Client(_conn, tlsConfig)
-		err = conn.Handshake()
-		if err != nil {
-			_conn.Close()
-			return nil, err
-		}
-		if !conn.ConnectionState().DidResume {
-			log.Debug("Connection did not resume")
-		}
-		return conn, nil
+		return tls.DialWithDialer(dialer(keepAlivePeriod), "tcp", forwardAddr, tlsConfig)
 	})
 }
 
@@ -74,12 +63,11 @@ func doRun(l net.Listener, dial func() (net.Conn, error)) {
 	}
 }
 
-func dial(keepAlivePeriod time.Duration, forwardAddr string) (net.Conn, error) {
-	conn, err := net.DialTimeout("tcp", forwardAddr, 30*time.Second)
-	if err == nil && keepAlivePeriod > 0 {
-		addKeepalive(keepAlivePeriod, conn)
+func dialer(keepAlivePeriod time.Duration) *net.Dialer {
+	return &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: keepAlivePeriod,
 	}
-	return conn, err
 }
 
 func addKeepalive(keepAlivePeriod time.Duration, conn net.Conn) {

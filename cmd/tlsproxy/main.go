@@ -23,7 +23,7 @@ var (
 	hostname        = flag.String("hostname", "", "Hostname to use for TLS. If not supplied, will auto-detect hostname")
 	listenAddr      = flag.String("listen-addr", ":6380", "Address at which to listen for incoming connections")
 	forwardAddr     = flag.String("forward-addr", "localhost:6379", "Address to which to forward connections")
-	keepAlivePeriod = flag.Duration("keepaliveperiod", 2*time.Hour, "Period for sending tcp keepalives")
+	keepAlivePeriod = flag.Duration("keepaliveperiod", 2*time.Minute, "Period for sending tcp keepalives")
 	pkfile          = flag.String("pkfile", "pk.pem", "File containing private key for this proxy")
 	certfile        = flag.String("certfile", "cert.pem", "File containing the certificate for this proxy")
 	cafile          = flag.String("cafile", "cert.pem", "File containing the certificate authority (or just certificate) with which to verify the remote end's identity")
@@ -65,22 +65,22 @@ func main() {
 	log.Debugf("Forwarding to: %v", *forwardAddr)
 	log.Debugf("TCP KeepAlive Period: %v", *keepAlivePeriod)
 
-	cert, err := keyman.KeyPairFor(hostname, "getlantern.org", *pkfile, *certfile)
-	if err != nil {
-		log.Fatalf("Unable to load keypair: %v", err)
+	tlsConfig := &tls.Config{}
+
+	if *pkfile != "" && *certfile != "" {
+		cert, err := keyman.KeyPairFor(hostname, "getlantern.org", *pkfile, *certfile)
+		if err != nil {
+			log.Fatalf("Unable to load keypair: %v", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
+
 	ca, err := keyman.LoadCertificateFromFile(*cafile)
 	if err != nil {
 		log.Fatalf("Unable to load ca certificate: %v", err)
 	}
 	pool := ca.PoolContainingCert()
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		RootCAs:      pool,
-		ClientCAs:    pool,
-	}
+	tlsConfig.RootCAs = pool
 
 	l, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
@@ -89,6 +89,8 @@ func main() {
 
 	switch *mode {
 	case "server":
+		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+		tlsConfig.ClientCAs = pool
 		tlsproxy.RunServer(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
 	case "client":
 		tlsproxy.RunClient(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
