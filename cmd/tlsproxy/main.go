@@ -7,6 +7,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/getlantern/golog"
@@ -28,6 +29,7 @@ var (
 	certfile        = flag.String("certfile", "cert.pem", "File containing the certificate for this proxy")
 	cafile          = flag.String("cafile", "cert.pem", "File containing the certificate authority (or just certificate) with which to verify the remote end's identity")
 	pprofAddr       = flag.String("pprofaddr", "localhost:4000", "pprof address to listen on, not activate pprof if empty")
+	printIfMatch    = flag.String("printifmatch", "", "Print the source IP and port if the line matches the given regex. Affects performance. Not doing match if empty.")
 	help            = flag.Bool("help", false, "Get usage help")
 
 	buffers = bpool.NewBytePool(25000, 32768)
@@ -87,11 +89,16 @@ func main() {
 		log.Fatalf("Unable to listen at %v: %v", *listenAddr, err)
 	}
 
+	var re *regexp.Regexp
+	if *printIfMatch != "" {
+		re = regexp.MustCompile(*printIfMatch)
+	}
+
 	switch *mode {
 	case "server":
-		tlsproxy.RunServer(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
+		tlsproxy.RunServer(l, *forwardAddr, *keepAlivePeriod, tlsConfig, re)
 	case "client":
-		tlsproxy.RunClient(l, *forwardAddr, *keepAlivePeriod, tlsConfig)
+		tlsproxy.RunClient(l, *forwardAddr, *keepAlivePeriod, tlsConfig, re)
 	default:
 		log.Fatalf("Unknown mode: %v", *mode)
 	}

@@ -2,23 +2,28 @@
 package tlsproxy
 
 import (
+	"bufio"
 	"crypto/tls"
+	"io"
 	"net"
 	_ "net/http/pprof"
+	"regexp"
 	"time"
 
+	"github.com/getlantern/golog"
 	"github.com/getlantern/http-proxy/buffers"
 	"github.com/getlantern/netx"
-	"github.com/siddontang/go/log"
 )
 
-func RunServer(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
+var log = golog.LoggerFor("tlsproxy")
+
+func RunServer(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config, re *regexp.Regexp) {
 	doRun(tls.NewListener(wrapKeepAliveListener(keepAlivePeriod, l), tlsConfig), func() (net.Conn, error) {
 		return dial(keepAlivePeriod, forwardAddr)
-	})
+	}, re)
 }
 
-func RunClient(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
+func RunClient(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config, re *regexp.Regexp) {
 	host, _, err := net.SplitHostPort(forwardAddr)
 	if err != nil {
 		log.Fatalf("Unable to determine hostname for server: %v", err)
@@ -41,10 +46,10 @@ func RunClient(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration
 			log.Debug("Connection did not resume")
 		}
 		return conn, nil
-	})
+	}, re)
 }
 
-func doRun(l net.Listener, dial func() (net.Conn, error)) {
+func doRun(l net.Listener, dial func() (net.Conn, error), re *regexp.Regexp) {
 	defer l.Close()
 	log.Debugf("Listening for incoming connections at: %v", l.Addr())
 
@@ -65,11 +70,30 @@ func doRun(l net.Listener, dial func() (net.Conn, error)) {
 			defer out.Close()
 
 			log.Debugf("Copying from %v to %v", in.RemoteAddr(), out.RemoteAddr())
-			bufOut := buffers.Get()
-			bufIn := buffers.Get()
-			defer buffers.Put(bufOut)
-			defer buffers.Put(bufIn)
-			netx.BidiCopy(out, in, bufOut, bufIn)
+			if re == nil {
+				bufOut := buffers.Get()
+				bufIn := buffers.Get()
+				defer buffers.Put(bufOut)
+				defer buffers.Put(bufIn)
+				netx.BidiCopy(out, in, bufOut, bufIn)
+			} else {
+				go io.Copy(in, out)
+				source := in.RemoteAddr().String()
+				r := bufio.NewReader(in)
+				for {
+					b, err := r.ReadBytes('\n')
+					if err != nil {
+						return
+					}
+					if re.Match(b) {
+						log.Debugf("%s from %s", string(b), source)
+					}
+					_, err = out.Write(b)
+					if err != nil {
+						return
+					}
+				}
+			}
 		}()
 	}
 }

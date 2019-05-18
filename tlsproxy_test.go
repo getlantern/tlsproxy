@@ -2,8 +2,10 @@ package tlsproxy
 
 import (
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
+	"regexp"
 	"testing"
 	"time"
 
@@ -16,10 +18,18 @@ const (
 )
 
 var (
-	data = []byte("Hello there strange and wonderful benchmarking world!")
+	data = []byte("Hello there strange and wonderful benchmarking world!\n")
 )
 
 func TestProxy(t *testing.T) {
+	doTestProxy(t, nil)
+}
+
+func TestProxyPrintIfMatch(t *testing.T) {
+	doTestProxy(t, regexp.MustCompile("^Hello.*"))
+}
+
+func doTestProxy(t *testing.T, re *regexp.Regexp) {
 	pk, err := keyman.GeneratePK(2048)
 	if err != nil {
 		t.Fatal(err)
@@ -70,8 +80,8 @@ func TestProxy(t *testing.T) {
 	}
 	defer cl.Close()
 
-	go RunServer(sl, l.Addr().String(), 150*time.Millisecond, serverConfig)
-	go RunClient(cl, sl.Addr().String(), 150*time.Millisecond, clientConfig)
+	go RunServer(sl, l.Addr().String(), 150*time.Millisecond, serverConfig, re)
+	go RunClient(cl, sl.Addr().String(), 150*time.Millisecond, clientConfig, re)
 
 	clientAddr := cl.Addr().String()
 
@@ -98,5 +108,9 @@ func TestProxy(t *testing.T) {
 		if !assert.NoError(t, err) {
 			return
 		}
+		if !assert.Equal(t, buf, data) {
+			return
+		}
+
 	}
 }
