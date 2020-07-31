@@ -2,13 +2,16 @@ package tlsproxy
 
 import (
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/getlantern/keyman"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -99,4 +102,48 @@ func TestProxy(t *testing.T) {
 			return
 		}
 	}
+}
+
+// The server should respond 502 Bad Gateway when it is unable to dial upstream.
+func TestBadGateway(t *testing.T) {
+	pk, err := keyman.GeneratePK(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := pk.TLSCertificateFor(time.Now().Add(24*time.Hour), false, nil, "lantern", "lantern")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPair, err := tls.X509KeyPair(cert.PEMEncoded(), pk.PEMEncoded())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig := &tls.Config{
+		Certificates: []tls.Certificate{keyPair},
+	}
+
+	sl, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sl.Close()
+
+	// Start a listener and immediately close it. We do this to find a port which is unlikely to
+	// have anything listening on it.
+	badUpstream, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	require.NoError(t, badUpstream.Close())
+
+	go RunServer(sl, badUpstream.Addr().String(), 150*time.Millisecond, serverConfig)
+
+	c := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	resp, err := c.Get(fmt.Sprintf("https://%s", sl.Addr().String()))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadGateway, resp.StatusCode)
 }

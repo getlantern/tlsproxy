@@ -1,10 +1,14 @@
-// tlsproxy provides a TLS proxy kind of like stunnel
+// Package tlsproxy provides a TLS proxy kind of like stunnel
 package tlsproxy
 
 import (
 	"crypto/tls"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
 	_ "net/http/pprof"
+	"strings"
 	"time"
 
 	"github.com/getlantern/http-proxy/buffers"
@@ -12,22 +16,25 @@ import (
 	"github.com/siddontang/go/log"
 )
 
+// RunServer starts a TLS server proxy. This proxy expects TLS connections and forwards the wrapped
+// data to the specified address.
 func RunServer(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
-	doRun(tls.NewListener(wrapKeepAliveListener(keepAlivePeriod, l), tlsConfig), func() (net.Conn, error) {
-		return dial(keepAlivePeriod, forwardAddr)
-	})
+	dialFn := func() (net.Conn, error) { return dial(keepAlivePeriod, stripScheme(forwardAddr)) }
+	doRun(tls.NewListener(wrapKeepAliveListener(keepAlivePeriod, l), tlsConfig), dialFn, getProtocol(forwardAddr))
 }
 
+// RunClient starts a TLS client proxy. This proxy expects plaintext connections and wraps the data
+// in a TLS connection to forward it to the specified address.
 func RunClient(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
-	host, _, err := net.SplitHostPort(forwardAddr)
+	host, _, err := net.SplitHostPort(stripScheme(forwardAddr))
 	if err != nil {
 		log.Fatalf("Unable to determine hostname for server: %v", err)
 	}
 	tlsConfig.ServerName = host
 	tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(5000)
 
-	doRun(wrapKeepAliveListener(keepAlivePeriod, l), func() (net.Conn, error) {
-		_conn, err := dial(keepAlivePeriod, forwardAddr)
+	dialFn := func() (net.Conn, error) {
+		_conn, err := dial(keepAlivePeriod, stripScheme(forwardAddr))
 		if err != nil {
 			return _conn, err
 		}
@@ -41,17 +48,17 @@ func RunClient(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration
 			log.Debug("Connection did not resume")
 		}
 		return conn, nil
-	})
+	}
+	doRun(wrapKeepAliveListener(keepAlivePeriod, l), dialFn, getProtocol(forwardAddr))
 }
 
-func doRun(l net.Listener, dial func() (net.Conn, error)) {
+func doRun(l net.Listener, dial func() (net.Conn, error), forwardProtocol protocol) {
 	defer l.Close()
 	log.Debugf("Listening for incoming connections at: %v", l.Addr())
 
 	for {
 		in, err := l.Accept()
 		if err != nil {
-			log.Errorf("Unable to accept: %v", err)
 			return
 		}
 
@@ -60,6 +67,9 @@ func doRun(l net.Listener, dial func() (net.Conn, error)) {
 			out, err := dial()
 			if err != nil {
 				log.Debugf("Unable to dial forwarding address: %v", err)
+				if err := forwardProtocol.writeBadGateway(in); err != nil {
+					log.Debugf("failed to respond with Bad Gateway: %w", err)
+				}
 				return
 			}
 			defer out.Close()
@@ -126,4 +136,62 @@ func (l *keepAliveListener) Close() error {
 
 func (l *keepAliveListener) Addr() net.Addr {
 	return l.l.Addr()
+}
+
+func stripScheme(addr string) string {
+	splits := strings.Split(addr, "://")
+	if len(splits) == 1 {
+		return splits[0]
+	}
+	return splits[1]
+}
+
+type protocol interface {
+	name() string
+	writeBadGateway(io.Writer) error
+}
+
+type protocolHTTP struct{}
+
+func (p protocolHTTP) name() string { return "HTTP" }
+
+func (p protocolHTTP) writeBadGateway(w io.Writer) error {
+	return (&http.Response{
+		StatusCode:    http.StatusBadGateway,
+		ProtoMajor:    1,
+		ContentLength: -1,
+	}).Write(w)
+}
+
+// REdis Serialization Protocol: https://redis.io/topics/protocol
+type protocolRESP struct{}
+
+func (p protocolRESP) name() string { return "RESP" }
+
+func (p protocolRESP) writeBadGateway(w io.Writer) error {
+	_, err := w.Write([]byte("-ERR bad gateway\r\n"))
+	return err
+}
+
+type protocolUnknown string
+
+func (p protocolUnknown) name() string { return string(p) }
+
+func (p protocolUnknown) writeBadGateway(_ io.Writer) error {
+	return fmt.Errorf("unknown protocol '%s'", p)
+}
+
+func getProtocol(addr string) protocol {
+	if !strings.Contains(addr, "://") {
+		return protocolHTTP{}
+	}
+	protocolName := strings.Split(addr, "://")[0]
+	switch protocolName {
+	case "http":
+		return protocolHTTP{}
+	case "resp":
+		return protocolRESP{}
+	default:
+		return protocolUnknown(protocolName)
+	}
 }
