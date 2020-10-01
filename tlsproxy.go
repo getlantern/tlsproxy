@@ -7,7 +7,6 @@ import (
 	_ "net/http/pprof"
 	"time"
 
-	"github.com/getlantern/http-proxy/buffers"
 	"github.com/getlantern/netx"
 	"github.com/siddontang/go/log"
 )
@@ -65,10 +64,10 @@ func doRun(l net.Listener, dial func() (net.Conn, error)) {
 			defer out.Close()
 
 			log.Debugf("Copying from %v to %v", in.RemoteAddr(), out.RemoteAddr())
-			bufOut := buffers.Get()
-			bufIn := buffers.Get()
-			defer buffers.Put(bufOut)
-			defer buffers.Put(bufIn)
+			bufOut := getBuffer()
+			bufIn := getBuffer()
+			defer putBuffer(bufOut)
+			defer putBuffer(bufIn)
 			netx.BidiCopy(out, in, bufOut, bufIn)
 		}()
 	}
