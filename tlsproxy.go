@@ -8,8 +8,12 @@ import (
 	"time"
 
 	"github.com/getlantern/netx"
+	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/siddontang/go/log"
 )
+
+// The practical TCP MSS for anything traversing Ethernet and using TCP timestamps
+const maxFrameSize = 1448
 
 func RunServer(l net.Listener, forwardAddr string, keepAlivePeriod time.Duration, tlsConfig *tls.Config) {
 	doRun(tls.NewListener(wrapKeepAliveListener(keepAlivePeriod, l), tlsConfig), func() (net.Conn, error) {
@@ -64,10 +68,10 @@ func doRun(l net.Listener, dial func() (net.Conn, error)) {
 			defer out.Close()
 
 			log.Debugf("Copying from %v to %v", in.RemoteAddr(), out.RemoteAddr())
-			bufOut := getBuffer()
-			bufIn := getBuffer()
-			defer putBuffer(bufOut)
-			defer putBuffer(bufIn)
+			bufOut := pool.Get(maxFrameSize)
+			bufIn := pool.Get(maxFrameSize)
+			defer pool.Put(bufOut)
+			defer pool.Put(bufIn)
 			netx.BidiCopy(out, in, bufOut, bufIn)
 		}()
 	}

@@ -12,6 +12,7 @@ require (
 	github.com/getlantern/mockconn v0.0.0-20191023022503-481dbcceeb58 // indirect
 	github.com/getlantern/mtime v0.0.0-20200228202836-084e1d8282b0 // indirect
 	github.com/getlantern/netx v0.0.0-20190110220209-9912de6f94fd
+	github.com/libp2p/go-buffer-pool v0.0.2
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c
 	github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726
 	github.com/stretchr/testify v1.5.1
